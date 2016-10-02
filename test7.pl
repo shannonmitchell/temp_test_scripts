@@ -26,15 +26,25 @@ def findslopex(y, m, b):
     
 
 # Find the white in the image
-def findWhite(curmat, x1, y1, x2, y2):
+def findWhite(curmat, x1, y1, x2, y2, minval):
+
+  # store the line info for a return
+  retinfo = {}
+
+  # Get the width and height
   height, width = curmat.shape
   print "height: %s width: %s" % (height, width)
 
   # Lets find the slope intercept equasion's slope and y intercept
   m = slope(x1, y1, x2, y2)
   print "m is %s" % m
+  retinfo['slope'] = m
   b = yintercept(m, x2, y2)
+  retinfo['yintercept'] = b
   print "b is %s" % b
+
+
+  ## Limit values to within the mat to allow for scans ##
 
   # If x1 is less than zero lets make it zero and find y
   if x1 < 0:
@@ -66,12 +76,51 @@ def findWhite(curmat, x1, y1, x2, y2):
     x2 = xret
     y2 = height
  
+
+  ## Parse the values along the line and find segments over min ##
+  curval = 0
+  lastval = 0
+  curstart = [0, 0]
+  curend = [0, 0]
   for curx in range(0, width):
-    cury = findslopey(curx, m, b)
+
+    # Find y using the slope intercept form
+    cury = int(findslopey(curx, m, b))
+
     #print "cx: %s cy: %s" % (curx, cury)
-    if cury > height:
+    # Stop if y gets higher than the height
+    if cury >= height:
       break
-    print curmat[cury,curx]
+
+    # Get the color value from the mat
+    colorval = curmat[cury,curx]
+   
+    # Set the cur value
+    curval = colorval
+
+    # If the last value was lower than the curvalue mark it as a start
+    if curval > lastval:
+      curstart = [curx, cury] 
+
+    # If the last value is greater than the current value mark an end and process
+    if curval < lastval:
+      curend = [curx, cury]
+
+      # Check that the difference is greater than the provided min
+      curdiff = curend[0] - curstart[0]
+      if curdiff >= minval:
+        print "Found a line segment greater than %s" % minval
+        if 'lines' not in retinfo:
+          retinfo['lines'] = []
+        retinfo['lines'].append([curstart, curend])
+        print retinfo['lines']
+
+    # Set the last value for next run
+    lastval = curval
+
+  # return the form info and segments
+  return retinfo
+  
   
 
 def main():
@@ -98,8 +147,22 @@ def main():
     x2 = int(x0 - 2000*(-b))
     y2 = int(y0 - 2000*(a))
 
-    findWhite(thresh, x1, y1, x2, y2)
+    lineinfo = findWhite(thresh, x1, y1, x2, y2, 10)
+    print lineinfo
     cv2.line(img,(x1,y1),(x2,y2),(0,0,255),2)
+
+     
+    curcolor = 0
+    for line in lineinfo['lines']:
+      print "creating line"
+      if curcolor == 0:
+        linecolor = (0,255,0)
+        curcolor = 1
+      elif curcolor == 1:
+        linecolor = (255,0,0)
+        curcolor = 0
+ 
+      cv2.line(img, tuple(line[0]), tuple(line[1]),linecolor,2)
     break
 
 
