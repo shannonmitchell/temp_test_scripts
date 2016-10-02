@@ -85,7 +85,7 @@ def findWhite(curmat, x1, y1, x2, y2, minval):
   for curx in range(0, width):
 
     # Find y using the slope intercept form
-    cury = int(findslopey(curx, m, b))
+    cury = int(round(findslopey(curx, m, b)))
 
     #print "cx: %s cy: %s" % (curx, cury)
     # Stop if y gets higher than the height
@@ -94,16 +94,25 @@ def findWhite(curmat, x1, y1, x2, y2, minval):
 
     # Get the color value from the mat
     colorval = curmat[cury,curx]
+    print colorval
    
     # Set the cur value
     curval = colorval
 
     # If the last value was lower than the curvalue mark it as a start
     if curval > lastval:
+      #print "found line start"
       curstart = [curx, cury] 
 
+    # End the run in a 0(to end a line if its 255)
+    #print "curx: %s width: %s" % (curx, width)
+    #print "cury: %s height %s" % (cury, height)
+
+
     # If the last value is greater than the current value mark an end and process
-    if curval < lastval:
+    # If we hit the end of the x or y mark as an end as well
+    if curval < lastval or curx == width or cury == height - 1:
+      #print "found line end"
       curend = [curx, cury]
 
       # Check that the difference is greater than the provided min
@@ -129,12 +138,18 @@ def main():
   img = cv2.imread('pl.jpg')
   gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
   ret,thresh = cv2.threshold(gray,190,255,cv2.THRESH_BINARY)
-  edges = cv2.Canny(thresh,50,150,apertureSize = 3)
+  kernel = numpy.ones((2,2),numpy.uint8)
+  dilation = cv2.dilate(thresh,kernel,iterations = 2)
+  kernel = numpy.ones((5,5),numpy.uint8)
+  closing = cv2.morphologyEx(dilation, cv2.MORPH_CLOSE, kernel)
+  #edges = cv2.Canny(thresh,50,150,apertureSize = 3)
+  edges = cv2.Canny(closing,50,150,apertureSize = 3)
 
 
 
   # Detect the lines
   lines = cv2.HoughLines(edges,1,numpy.pi/180,110)
+  test = 0
   for rho,theta in lines[0]:
     #print rho
     #print theta
@@ -147,31 +162,38 @@ def main():
     x2 = int(x0 - 2000*(-b))
     y2 = int(y0 - 2000*(a))
 
-    lineinfo = findWhite(thresh, x1, y1, x2, y2, 10)
+    if test != 3:
+      test = test + 1
+      continue
+    
+    lineinfo = findWhite(closing, x1, y1, x2, y2, 20)
     print lineinfo
     cv2.line(img,(x1,y1),(x2,y2),(0,0,255),2)
 
      
-    curcolor = 0
-    for line in lineinfo['lines']:
-      print "creating line"
-      if curcolor == 0:
-        linecolor = (0,255,0)
-        curcolor = 1
-      elif curcolor == 1:
-        linecolor = (255,0,0)
+    # Print the line segments over top of the image
+    if 'lines' in lineinfo:
         curcolor = 0
+        for line in lineinfo['lines']:
+          print "creating line"
+          if curcolor == 0:
+            linecolor = (0,255,0)
+            curcolor = 1
+          elif curcolor == 1:
+            linecolor = (255,0,0)
+            curcolor = 0
  
-      cv2.line(img, tuple(line[0]), tuple(line[1]),linecolor,2)
+          cv2.line(img, tuple(line[0]), tuple(line[1]),linecolor,2)
     break
 
 
 
 
   # Display and wait
-  cv2.imshow("gray", gray)
-  cv2.imshow("edges", edges)
-  cv2.imshow("thresh", thresh)
+#  cv2.imshow("gray", gray)
+#  cv2.imshow("edges", edges)
+#  cv2.imshow("thresh", thresh)
+  cv2.imshow("closing", closing)
   cv2.imshow("houghlines", img)
   cv2.waitKey(0)
 
