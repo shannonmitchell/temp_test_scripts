@@ -9,7 +9,7 @@ cascade = cv2.CascadeClassifier("cars/cars.xml")
 stream=urllib.urlopen('http://80.14.234.191:81/mjpg/video.mjpg')
 bytes=''
 
-fgbg = cv2.createBackgroundSubtractorMOG2(detectShadows=True)
+fgbg = cv2.createBackgroundSubtractorMOG2(detectShadows=True, varThreshold=100)
 #fgbggmg = cv2.createBackgroundSubtractorGMG2()
 
 while True:
