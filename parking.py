@@ -470,13 +470,12 @@ def updateHistograms(curimg):
                 continue
 
         highestrange = 0
-        print lwranges
         for ulrange in lwranges:
             currange = ulrange[1] - ulrange[0]
             #print "cur: %s  high: %s" % (currange, highestrange)
             if currange > highestrange:
                 highestrange = currange
-        print "Highest range in historgram above %s is %s" % (triggerlimit, highestrange)
+        print "\n\nHighest range in historgram above %s is %s" % (triggerlimit, highestrange)
         print "Highest concentration of color is %s" % highestconcentration
 
         if highestconcentration > concval and highestrange < widthlimit:
