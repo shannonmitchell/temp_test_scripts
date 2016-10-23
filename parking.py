@@ -179,6 +179,7 @@ def lineAllTemplates(curimg):
     green = (0, 255, 0)
     red = (255, 0, 255)
     curcolor = red
+    x = 0
     for template in templates:
         curpoints = template['points']
         if 'hascar' in template:
@@ -190,6 +191,17 @@ def lineAllTemplates(curimg):
         cv2.line(curimg, curpoints[1], curpoints[2], curcolor, 2)
         cv2.line(curimg, curpoints[2], curpoints[3], curcolor, 2)
         cv2.line(curimg, curpoints[3], curpoints[0], curcolor, 2)
+
+
+        h, w = curimg.shape[:2]
+        cv2.putText(img = curimg, 
+                text = "%d" % (x),
+                org = (curpoints[0][0] + 20, curpoints[0][1] + 20), 
+                fontFace = cv2.FONT_HERSHEY_DUPLEX, 
+                fontScale = .5, 
+                color = (255,0,0),
+                thickness = 1)
+        x = x + 1
 
 ######################################################################
 # Take the width, height and a set of points.  Create a blank image
