@@ -36,6 +36,12 @@ feeds_path = "./feeds"
 session_feed_name = ''
 session_feed_url = ''
 
+# Keep a running percent between histogram template runs
+aoa_perc = 0
+
+# Use for initial parking lot guess
+initial_check = 0
+
 ############################
 # Create a new feed config
 ############################
@@ -370,6 +376,10 @@ def processStream(feed_name, feed_url):
     stream = urllib.urlopen(feed_url)
     bytes=''
 
+    # only check the histograms every 50 frames
+    histogram_check = 0
+    histogram_reset = 10
+
     # Loop through and process camera frames
     while True:
 
@@ -400,6 +410,13 @@ def processStream(feed_name, feed_url):
             # display the frame
             cv2.imshow('original', curframe)
 
+            # check if its time to run the histogram check
+            if histogram_check >= histogram_reset:
+                histogram_check = 0
+                updateHistograms(curframe)
+            else:
+                histogram_check = histogram_check + 1
+
 
         key = cv2.waitKey(1) & 0xFF
         if key == 27 or key == ord('x'):
@@ -426,75 +443,147 @@ def updateHistograms(curimg):
     # Set up global vars
     global templates
 
-    # thresholds
-    triggerlimit = 10 # value to look for to find beginning and end of spikes
-    rangestart = 0    # start reading histogram from
-    #rangestop = 140   # stop reading histogram here and ignore upper values
-    rangestop = 255   # stop reading histogram here and ignore upper values
-    concval = 700     # empty spots will have a larger concentration of certain colors
-    widthlimit = 41   # The limit for the width of the larges spike. If lower then this it looks like a free space.
+    # thresholds(used consistantly on the diff checks to see if a car enters/leaves a space)
+    diff_trigger = 30
+
+    # keep values for overal perc average between each run(used only on initial guess check)
+    global aoa_perc
+    aoa_count = 0
+    aoa_total = 0
+
+    # Used for initial guess
+    global initial_check
+
+    # If avg_perc is close on all spaces, track and mark them all as being empty
+    # used only on the initial guess checks
+    avg_perc_min = 9999
+    avg_perc_max = 0
 
     # Parse through each template and get a mask from the current image
     x = 0
+    print "\n\n#############################"
+    print "# Running updateHistrograms"
+    print "#############################"
+
+
+    # parse through the templates
     for template in templates:
+
+        # default to 0(no car) on the avg_check and 'nomatch' on the diff_check
+        avg_check = 0
+        diff_check = 'nomatch'
+
+        # Get a gray images of the mask and curimg
         maskimg = template['template']
-        curgray = cv2.cvtColor(curimg,cv2.COLOR_BGR2GRAY)
         maskgray = cv2.cvtColor(maskimg,cv2.COLOR_BGR2GRAY)
+        curgray = cv2.cvtColor(curimg,cv2.COLOR_BGR2GRAY)
+
+        # Get the histogram using a mask
         histr = cv2.calcHist([curgray],[0], maskgray, [256], [0, 256])
-        template['hist'] = histr
-        #print histr
 
-        lwranges = []
-        findlower = 1
-        findupper = 0
-        curlower = 0
-        curhigher = 0
-        highestconcentration = 0
-        for i in range(rangestart, rangestop):
-            #print "i: %s  findlower: %s findupper: %s" % (i, findlower, findupper)
-            if histr[i] > highestconcentration:
-                highestconcentration = histr[i]
-            if findlower == 1 and histr[i] > triggerlimit:
-                #print "found lower %s" % i
-                curlower = i
-                findlower = 0
-                findupper = 1
-                continue
-            if findupper == 1 and histr[i] < triggerlimit:
-                #print "found upper %s" % i
-                curupper = i
-                findlower = 1
-                findupper = 0
-                #print currange
-                lwranges.append([curlower, curupper])
-                continue
+        # get the total pixel count to use for percentages
+        total_template_pixels = cv2.countNonZero(maskgray)
+        
 
-        highestrange = 0
-        for ulrange in lwranges:
-            currange = ulrange[1] - ulrange[0]
-            #print "cur: %s  high: %s" % (currange, highestrange)
-            if currange > highestrange:
-                highestrange = currange
-        print "\n\nHighest range in historgram above %s is %s" % (triggerlimit, highestrange)
-        print "Highest concentration of color is %s" % highestconcentration
+        # find the highest concentration and average amount per color mean 
+        highestconc = 0
+        apc_avg = 0
+        apc_total = 0
+        apc_count = 0
+        for i in xrange(0, 255):
+            if histr[i] > highestconc:
+                highestconc = histr[i]
+            if histr[i] > 1:
+                apc_count = apc_count + 1
+                apc_total = apc_total + histr[i]
+            
+        
+        # Check and template value
+        apc_avg = apc_total / apc_count
 
-        if highestconcentration > concval and highestrange < widthlimit:
-            print "hc: %s con: %s setting to red. highestrange is %s" % (highestconcentration, concval, highestrange)
-            template['hascar'] = 0
+        # set some values for the initial guess checks
+        avg_perc = (apc_avg / apc_total) * 100
+        if avg_perc < avg_perc_min:
+            avg_perc_min = avg_perc
+        if avg_perc > avg_perc_max:
+            avg_perc_max = avg_perc
+
+        aoa_count = aoa_count + 1
+        aoa_total = aoa_total + avg_perc
+        if 'last_apc_avg' not in template:
+            template['last_apc_avg'] = apc_avg
+            continue
+        elif avg_perc < (aoa_perc + 1):
+                avg_check = 1
+        elif avg_perc > (aoa_perc + 1):
+                avg_check = 0
+        # The diff checks below do most of the work after the initial guess
+        elif template['last_apc_avg'] > apc_avg and (template['last_apc_avg'] - apc_avg) > diff_trigger:  
+            diff_check = 1
+            template['last_apc_avg'] = apc_avg
+        elif template['last_apc_avg'] < apc_avg and (apc_avg - template['last_apc_avg']) > diff_trigger:  
+            diff_check = 0
+            template['last_apc_avg'] = apc_avg
         else:
-            print "hc: %s con: %s setting to green. highestrange is %s" % (highestconcentration, concval, highestrange)
-            template['hascar'] = 1
-                
-        #print histr[i]
+            template['last_apc_avg'] = apc_avg
 
-        #imgname = "hist%d" % x
+        # find value based on checks
+        if diff_check != 'nomatch':
+            if diff_check == 1:
+                template['hascar'] = 1
+            else:
+                template['hascar'] = 0
+
+        print "\n\napc_total(%s) / apc_count(%s) = apc_mean(%s)" % (apc_total, apc_count, apc_avg)
+        print "highestconc: %s" % highestconc
+
+
+
+        # override with avg checks on only the first 5 attempts
+        if initial_check < 5:
+
+            print "initial_check: %s" % initial_check
+
+            # usage averages
+            if avg_check == 1:
+                template['hascar'] = 1
+            else: 
+                template['hascar'] = 0
+
+
+            print "apc_avg(%s) / apc_total(%s) * 100 = avg_perc(%s)" % (apc_avg, apc_total, (apc_avg / apc_total) * 100)
+
+            aoa_perc = aoa_total / aoa_count
+            print "Running perc avg - aoa_perc: %s" % aoa_perc
+
+
+    # increment the initial check and stop at 5.
+    # check to see if all the space are close to the same. If so mark all the spaces empty
+    # and let the diff checks take over
+    if initial_check < 5:
+      initial_check = initial_check + 1
+      print "avg_perc_min: %s avg_perc_max: %s diff: %s" % (avg_perc_min, avg_perc_max, avg_perc_max - avg_perc_min)
+      if initial_check > 1:
+          if (avg_perc_max - avg_perc_min) < 2:
+              print "spaces look similar. lets default to empty and let the diff checks handle the rest"
+              initial_check = 6
+              for template in templates:
+                  template['hascar'] = 0
+                
+
+   
+        
+
+
+
         #cv2.imshow(imgname, maskgray)
         #x = x + 1
         #cv2.waitKey(1) # force a redraw
 
-        plt.plot(histr)
-        plt.xlim([0, 256])
-        plt.show()
+        #plt.plot(histr)
+        #plt.xlim([0, 256])
+        #plt.show()
+
        
 
         
