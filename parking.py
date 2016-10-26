@@ -36,11 +36,7 @@ feeds_path = "./feeds"
 session_feed_name = ''
 session_feed_url = ''
 
-# Keep a running percent between histogram template runs
-aoa_perc = 0
 
-# Use for initial parking lot guess
-initial_check = 0
 
 ############################
 # Create a new feed config
@@ -443,21 +439,8 @@ def updateHistograms(curimg):
     # Set up global vars
     global templates
 
-    # thresholds(used consistantly on the diff checks to see if a car enters/leaves a space)
-    diff_trigger = 30
-
-    # keep values for overal perc average between each run(used only on initial guess check)
-    global aoa_perc
-    aoa_count = 0
-    aoa_total = 0
-
-    # Used for initial guess
-    global initial_check
-
-    # If avg_perc is close on all spaces, track and mark them all as being empty
-    # used only on the initial guess checks
-    avg_perc_min = 9999
-    avg_perc_max = 0
+    # percent it has to shrink or grow to trigger a change
+    diff_trigger_perc = .30
 
     # Parse through each template and get a mask from the current image
     x = 0
@@ -491,89 +474,41 @@ def updateHistograms(curimg):
         apc_total = 0
         apc_count = 0
         for i in xrange(0, 255):
-            if histr[i] > highestconc:
-                highestconc = histr[i]
-            if histr[i] > 1:
+            if int(histr[i]) > highestconc:
+                highestconc = int(histr[i])
+            if int(histr[i]) > 1:
                 apc_count = apc_count + 1
-                apc_total = apc_total + histr[i]
+                apc_total = apc_total + int(histr[i])
             
         
         # Check and template value
         apc_avg = apc_total / apc_count
 
-        # set some values for the initial guess checks
-        avg_perc = (apc_avg / apc_total) * 100
-        if avg_perc < avg_perc_min:
-            avg_perc_min = avg_perc
-        if avg_perc > avg_perc_max:
-            avg_perc_max = avg_perc
 
-        aoa_count = aoa_count + 1
-        aoa_total = aoa_total + avg_perc
+        # If the last_apc_average isn't set, lets set it the first round and continue
         if 'last_apc_avg' not in template:
+            print "las_apc_avg was not in template. adding and skipping"
             template['last_apc_avg'] = apc_avg
             continue
-        elif avg_perc < (aoa_perc + 1):
-                avg_check = 1
-        elif avg_perc > (aoa_perc + 1):
-                avg_check = 0
-        # The diff checks below do most of the work after the initial guess
-        elif template['last_apc_avg'] > apc_avg and (template['last_apc_avg'] - apc_avg) > diff_trigger:  
-            diff_check = 1
+
+        # Set the diff trigger based off of the apc_avg
+        diff_trigger = diff_trigger_perc * template['last_apc_avg'] 
+        print "setting trigger to %d percent of the last_apc_avg(%s) which comes to %s" % ((diff_trigger_perc * 100), template['last_apc_avg'], diff_trigger)
+
+        # The diff checks below do most of the work 
+        if template['last_apc_avg'] > apc_avg and (template['last_apc_avg'] - apc_avg) > diff_trigger:  
+            print "Diff is greater than diff_trigger in the negative. Marking space as having a car"
+            template['hascar'] = 1
             template['last_apc_avg'] = apc_avg
         elif template['last_apc_avg'] < apc_avg and (apc_avg - template['last_apc_avg']) > diff_trigger:  
-            diff_check = 0
+            print "Diff is greater than diff_trigger in the positive. Marking space being empty"
+            template['hascar'] = 0
             template['last_apc_avg'] = apc_avg
         else:
             template['last_apc_avg'] = apc_avg
 
-        # find value based on checks
-        if diff_check != 'nomatch':
-            if diff_check == 1:
-                template['hascar'] = 1
-            else:
-                template['hascar'] = 0
-
-        print "\n\napc_total(%s) / apc_count(%s) = apc_mean(%s)" % (apc_total, apc_count, apc_avg)
-        print "highestconc: %s" % highestconc
-
-
-
-        # override with avg checks on only the first 5 attempts
-        if initial_check < 5:
-
-            print "initial_check: %s" % initial_check
-
-            # usage averages
-            if avg_check == 1:
-                template['hascar'] = 1
-            else: 
-                template['hascar'] = 0
-
-
-            print "apc_avg(%s) / apc_total(%s) * 100 = avg_perc(%s)" % (apc_avg, apc_total, (apc_avg / apc_total) * 100)
-
-            aoa_perc = aoa_total / aoa_count
-            print "Running perc avg - aoa_perc: %s" % aoa_perc
-
-
-    # increment the initial check and stop at 5.
-    # check to see if all the space are close to the same. If so mark all the spaces empty
-    # and let the diff checks take over
-    if initial_check < 5:
-      initial_check = initial_check + 1
-      print "avg_perc_min: %s avg_perc_max: %s diff: %s" % (avg_perc_min, avg_perc_max, avg_perc_max - avg_perc_min)
-      if initial_check > 1:
-          if (avg_perc_max - avg_perc_min) < 2:
-              print "spaces look similar. lets default to empty and let the diff checks handle the rest"
-              initial_check = 6
-              for template in templates:
-                  template['hascar'] = 0
-                
-
-   
-        
-
+        print "apc_total(%s) / apc_count(%s) = apc_mean(%s)" % (apc_total, apc_count, apc_avg)
+        print "highestconc: %s\n\n" % highestconc
 
 
         #cv2.imshow(imgname, maskgray)
